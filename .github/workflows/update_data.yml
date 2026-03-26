@@ -6,8 +6,13 @@ on:
     - cron: '0 14 * * 2'
     # 每週五 22:00 台灣時間
     - cron: '0 14 * * 5'
-  # 允許手動觸發
+  # 允許手動觸發（可選填補抓月數）
   workflow_dispatch:
+    inputs:
+      backfill:
+        description: '補抓歷史月數（0=只做增量更新，36=三年）'
+        required: false
+        default: '0'
 
 permissions:
   contents: write
@@ -31,15 +36,22 @@ jobs:
       - name: 安裝相依套件
         run: pip install -r requirements.txt
 
-      - name: 執行爬蟲更新資料
-        run: python src/scraper.py
+      - name: 執行爬蟲（增量更新 or 補抓歷史）
+        run: |
+          MONTHS="${{ github.event.inputs.backfill || '0' }}"
+          if [ "$MONTHS" -gt "0" ]; then
+            echo "補抓過去 $MONTHS 個月歷史資料..."
+            python src/scraper.py --backfill "$MONTHS"
+          else
+            echo "執行增量更新..."
+            python src/scraper.py
+          fi
 
       - name: 提交更新後的 CSV
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/lotto_history.csv
-          # 若無變動則跳過 commit
           git diff --cached --quiet || git commit -m "chore: 自動更新大樂透歷史資料 $(date +'%Y-%m-%d')"
 
       - name: 推送至遠端
