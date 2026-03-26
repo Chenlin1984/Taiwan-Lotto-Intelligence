@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
-from src.utils import (
+from .utils import (
     PRIMES,
     build_partner_map,
     compute_frequency_weight,
