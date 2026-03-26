@@ -232,7 +232,13 @@ class RandomForestPredictor:
             return list(range(1, n+1))
         probs = {}
         for num, clf in self._models.items():
-            probs[num] = clf.predict_proba(self._last_X)[0][1]
+            proba = clf.predict_proba(self._last_X)[0]
+            # [Fix] 若訓練資料中該號碼從未出現（只有 class 0），則機率為 0
+            if 1 in clf.classes_:
+                idx = list(clf.classes_).index(1)
+                probs[num] = proba[idx]
+            else:
+                probs[num] = 0.0
         return sorted(probs, key=probs.get, reverse=True)[:n]
 
 
