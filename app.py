@@ -139,6 +139,13 @@ _bs_stats         = compute_big_small_stats(history, periods=50)
 # 合併建議排除：連續出現 + 近期過熱（去重排序）
 _suggested_remove = sorted(set(_streak_nums) | set(_overfreq_nums))
 
+# 長遺漏號碼：遺漏期數 > 15，依遺漏期數由高到低排序
+_missing_data = compute_missing_periods(history)
+_long_missing = sorted(
+    [(n, m) for n, m in _missing_data.items() if m > 15],
+    key=lambda x: -x[1],
+)
+
 # ── 建議排除號碼橫幅 ─────────────────────────
 st.markdown("---")
 st.markdown("### 🚫 建議排除號碼")
@@ -158,17 +165,29 @@ with _excl_cols[0]:
     else:
         st.success("無（近期無號碼過於頻繁）")
 
+    st.markdown("**③ 長遺漏號碼（> 15 期未出現）**")
+    st.caption("長期未出現，統計規律偏離，建議暫時迴避")
+    if _long_missing:
+        # 顯示：號碼(遺漏期數)，遺漏最多排最前
+        st.warning("　".join(f"`{n:02d}`({m}期)" for n, m in _long_missing))
+    else:
+        st.success("無（所有號碼遺漏均在 15 期以內）")
+
 with _excl_cols[1]:
-    st.markdown("**📋 綜合建議排除清單**（①＋②聯集）")
-    if _suggested_remove:
+    st.markdown("**📋 綜合建議排除清單**（①＋②＋③聯集）")
+    _suggested_remove_all = sorted(
+        set(_suggested_remove) | {n for n, _ in _long_missing}
+    )
+    if _suggested_remove_all:
         badge_html = " ".join(
             f'<span style="background:#e74c3c;color:white;padding:3px 8px;'
-            f'border-radius:12px;font-weight:bold;margin:2px;display:inline-block">{n:02d}</span>'
-            for n in _suggested_remove
+            f'border-radius:12px;font-weight:bold;margin:2px;display:inline-block">'
+            f'{n:02d}</span>'
+            for n in _suggested_remove_all
         )
         st.markdown(badge_html, unsafe_allow_html=True)
         st.caption(
-            f"共 {len(_suggested_remove)} 個號碼建議迴避，"
+            f"共 {len(_suggested_remove_all)} 個號碼建議迴避，"
             "可複製至側邊欄「手動排除號碼」欄位使用。"
         )
     else:
@@ -404,10 +423,10 @@ with tab_backtest:
                     rows.append({
                         "組別": f"第 {i} 組",
                         "號碼": " | ".join(f"{n:02d}" for n in combo),
-                        "3中3": hits["3?"],
-                        "3中4": hits["4?"],
-                        "3中5": hits["5?"],
-                        "頭獎": hits["6?"],
+                        "玖獎(3中/100)": hits["3?"],
+                        "陸獎(4中/800)": hits["4?"],
+                        "肆獎(5中/2萬)": hits["5?"],
+                        "貳獎(6中/估算)": hits["6?"],
                     })
 
                 df_bt = pd.DataFrame(rows)
