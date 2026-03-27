@@ -303,3 +303,32 @@ def compute_big_small_stats(history: List[List[int]], periods: int = 50) -> Dict
         "small_q25": float(np.percentile(arr, 25)),
         "small_q75": float(np.percentile(arr, 75)),
     }
+
+
+# ──────────────────────────────────────────────
+# 11. 鏡像號碼對計數
+# ──────────────────────────────────────────────
+def count_mirror_pairs(combo: List[int]) -> int:
+    """
+    計算組合中鏡像號碼對數（十位與個位對調：12↔21、1↔10、13↔31）。
+    個位數 n 視為 0n，鏡像為 n×10（如 1→10、2→20）。
+
+    Examples
+    --------
+    [12, 21, 5, 34, 43, 7]  → 2 對（12↔21, 34↔43）
+    [1, 10, 13, 31, 7, 9]   → 2 對（1↔10, 13↔31）
+    [1, 2, 3, 4, 5, 6]      → 0 對
+    """
+    combo_set = set(combo)
+    count = 0
+    checked: Set[int] = set()
+    for n in combo:
+        if n in checked:
+            continue
+        tens, ones = n // 10, n % 10
+        mirrored = ones * 10 + tens
+        if mirrored != n and 1 <= mirrored <= 49 and mirrored in combo_set:
+            count += 1
+            checked.add(n)
+            checked.add(mirrored)
+    return count

@@ -20,15 +20,17 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.engine import EnhancedLottoAnalyzer, LottoConfig, RandomForestPredictor
+from src.engine import EnhancedLottoAnalyzer, FilterConfig, LottoConfig, RandomForestPredictor
 from src.scraper import DATA_PATH, load_history
 from src.utils import (
+    PRIMES,
     backtest_combo_hits,
     compute_big_small_stats,
     compute_missing_periods,
     compute_overfrequent_numbers,
     compute_streak_numbers,
     compute_sum_stats,
+    count_mirror_pairs,
     simulate_roi,
 )
 
@@ -87,6 +89,19 @@ with st.sidebar:
         default=[],
         help="選擇不希望出現在推薦組合中的號碼",
     )
+
+    st.divider()
+    with st.expander("🔧 進階篩選條件（9 大指標）"):
+        st.caption("調整各指標臨界值，影響號碼生成邏輯")
+        _sum_range   = st.slider("① 總和範圍", 50, 280, (100, 200), step=5)
+        _small_range = st.slider("② 小號個數（≤25）", 0, 6, (1, 5))
+        _prime_range = st.slider("③ 質數個數", 0, 6, (1, 3))
+        _gap_min     = st.slider("④ 最小間距（max-min）", 0, 48, 25)
+        _mirror_max  = st.selectbox("⑦ 最多鏡像對（如 12↔21）", [0, 1, 2, 3], index=1)
+        _omit_hot    = st.slider("⑧ 熱號排除（遺漏 < N 期不選，0=不限）", 0, 10, 0)
+        _req_consec  = st.checkbox("⑤ 必須含至少 1 組二連號", value=False)
+        _no_same_tail = st.checkbox("⑥ 排除尾數全相同", value=True)
+        _no_diff_tail = st.checkbox("⑥ 排除尾數全不同", value=False)
 
     st.divider()
     st.subheader("🔄 資料更新")
@@ -238,10 +253,25 @@ with tab_gen:
         if st.button("🎯 生成推薦號碼", type="primary", use_container_width=True):
             with st.spinner(f"正在分析 {len(history)} 期資料並生成 {num_groups} 組號碼..."):
                 cfg = LottoConfig(min_score=6)
+                fcfg = FilterConfig(
+                    sum_min=_sum_range[0],
+                    sum_max=_sum_range[1],
+                    small_min=_small_range[0],
+                    small_max=_small_range[1],
+                    prime_min=_prime_range[0],
+                    prime_max=_prime_range[1],
+                    gap_min=_gap_min,
+                    mirror_max=int(_mirror_max),
+                    omit_hot_min=_omit_hot,
+                    require_consecutive=_req_consec,
+                    allow_all_same_tail=not _no_same_tail,
+                    allow_all_diff_tail=not _no_diff_tail,
+                )
                 analyzer = EnhancedLottoAnalyzer(
                     history=history,
                     config=cfg,
                     excluded=excluded_nums,
+                    filter_cfg=fcfg,
                 )
                 # 將 slider 1-10 對應到 0.2-2.0 的熱號權重
                 hw = hot_weight / 5.0
@@ -277,6 +307,35 @@ with tab_gen:
 
             # 存入 session_state 供回測使用
             st.session_state["last_results"] = [r.numbers for r in results]
+
+            # ── 篩選指標驗證報告 ──────────────────
+            with st.expander("🔍 篩選指標驗證報告", expanded=False):
+                st.caption("逐組驗證 9 大指標是否通過（✅通過 / ❌未通過）")
+                _mp = compute_missing_periods(history)
+                v_rows = []
+                for i, r in enumerate(results, 1):
+                    c = r.numbers
+                    _s = sum(c)
+                    _gap = max(c) - min(c)
+                    _sm  = sum(1 for n in c if n <= 25)
+                    _pr  = sum(1 for n in c if n in PRIMES)
+                    _tails = [n % 10 for n in c]
+                    _tu = len(set(_tails))
+                    _p2, _ = EnhancedLottoAnalyzer._count_consecutive(c)
+                    _mir = count_mirror_pairs(c)
+                    _hot_ok = all(_mp.get(n, 0) >= fcfg.omit_hot_min for n in c) if fcfg.omit_hot_min > 0 else True
+                    v_rows.append({
+                        "組別": f"第 {i} 組",
+                        f"①總和({fcfg.sum_min}-{fcfg.sum_max})": f"{'✅' if fcfg.sum_min<=_s<=fcfg.sum_max else '❌'} {_s}",
+                        f"②小號({fcfg.small_min}-{fcfg.small_max})": f"{'✅' if fcfg.small_min<=_sm<=fcfg.small_max else '❌'} {_sm}個",
+                        f"③質數({fcfg.prime_min}-{fcfg.prime_max})": f"{'✅' if fcfg.prime_min<=_pr<=fcfg.prime_max else '❌'} {_pr}個",
+                        f"④間距(≥{fcfg.gap_min})": f"{'✅' if _gap>=fcfg.gap_min else '❌'} {_gap}",
+                        "⑤連號": f"{'✅' if (not fcfg.require_consecutive or _p2>0) else '❌'} {_p2}組",
+                        "⑥尾數": f"{'✅' if (fcfg.allow_all_same_tail or _tu>1) and (fcfg.allow_all_diff_tail or _tu<6) else '❌'} {_tu}種",
+                        f"⑦鏡像(≤{fcfg.mirror_max})": f"{'✅' if _mir<=fcfg.mirror_max else '❌'} {_mir}對",
+                        f"⑧熱號(遺漏≥{fcfg.omit_hot_min})": f"{'✅' if _hot_ok else '❌'}",
+                    })
+                st.dataframe(pd.DataFrame(v_rows), use_container_width=True, hide_index=True)
 
     with col_ml:
         st.subheader("🤖 ML 預測熱門號")
