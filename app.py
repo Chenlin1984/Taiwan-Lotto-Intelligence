@@ -26,6 +26,7 @@ from src.utils import (
     backtest_combo_hits,
     compute_big_small_stats,
     compute_missing_periods,
+    compute_overfrequent_numbers,
     compute_streak_numbers,
     compute_sum_stats,
     simulate_roi,
@@ -130,30 +131,60 @@ st.info(f"已載入 **{len(history)}** 期歷史資料 | 最近一期: {history[
 # ──────────────────────────────────────────────
 # 下期選號參考指標
 # ──────────────────────────────────────────────
-_streak_nums = compute_streak_numbers(history, streak=3)
-_sum_stats = compute_sum_stats(history, periods=50)
-_bs_stats = compute_big_small_stats(history, periods=50)
+_streak_nums      = compute_streak_numbers(history, streak=3)
+_overfreq_nums    = compute_overfrequent_numbers(history, window=10, z_threshold=1.5)
+_sum_stats        = compute_sum_stats(history, periods=50)
+_bs_stats         = compute_big_small_stats(history, periods=50)
 
-with st.expander("📊 下期選號參考指標", expanded=True):
-    ref_c1, ref_c2, ref_c3, ref_c4 = st.columns(4)
+# 合併建議排除：連續出現 + 近期過熱（去重排序）
+_suggested_remove = sorted(set(_streak_nums) | set(_overfreq_nums))
+
+# ── 建議排除號碼橫幅 ─────────────────────────
+st.markdown("---")
+st.markdown("### 🚫 建議排除號碼")
+_excl_cols = st.columns([2, 3])
+with _excl_cols[0]:
+    st.markdown("**① 連續 3 期出現**")
+    st.caption("近 3 期每期都有開出，可能進入冷卻期")
+    if _streak_nums:
+        st.warning("　".join(f"`{n:02d}`" for n in _streak_nums))
+    else:
+        st.success("無（近 3 期無號碼連續出現）")
+
+    st.markdown("**② 近 10 期過熱**")
+    st.caption("出現頻率超過統計均值 +1.5σ（異常偏高）")
+    if _overfreq_nums:
+        st.warning("　".join(f"`{n:02d}`" for n in _overfreq_nums))
+    else:
+        st.success("無（近期無號碼過於頻繁）")
+
+with _excl_cols[1]:
+    st.markdown("**📋 綜合建議排除清單**（①＋②聯集）")
+    if _suggested_remove:
+        badge_html = " ".join(
+            f'<span style="background:#e74c3c;color:white;padding:3px 8px;'
+            f'border-radius:12px;font-weight:bold;margin:2px;display:inline-block">{n:02d}</span>'
+            for n in _suggested_remove
+        )
+        st.markdown(badge_html, unsafe_allow_html=True)
+        st.caption(
+            f"共 {len(_suggested_remove)} 個號碼建議迴避，"
+            "可複製至側邊欄「手動排除號碼」欄位使用。"
+        )
+    else:
+        st.success("目前無建議排除號碼，所有號碼可正常使用。")
+
+# ── 選號參考指標 ─────────────────────────────
+with st.expander("📊 下期選號參考指標", expanded=False):
+    ref_c1, ref_c2, ref_c3 = st.columns(3)
 
     with ref_c1:
-        st.markdown("#### ⚠️ 建議避開號碼")
-        st.caption("近 3 期連續出現的號碼，統計上下期休息機率較高")
-        if _streak_nums:
-            st.warning(
-                "連續出現：" + "  ".join(f"**{n:02d}**" for n in _streak_nums)
-            )
-        else:
-            st.success("近 3 期無號碼連續出現，無需特別迴避")
-
-    with ref_c2:
         st.markdown("#### 📐 和值參考範圍")
         st.caption("近 50 期統計，建議選號落在此區間")
         st.metric("Q25 ～ Q75", f"{int(_sum_stats['q25'])} ～ {int(_sum_stats['q75'])}")
         st.caption(f"歷史均值：{_sum_stats['mean']:.1f}　標準差：{_sum_stats['std']:.1f}")
 
-    with ref_c3:
+    with ref_c2:
         st.markdown("#### ⚖️ 大小號比例參考")
         st.caption("近 50 期平均大小號分佈（小號 ≤25，大號 >25）")
         col_s, col_b = st.columns(2)
@@ -163,7 +194,7 @@ with st.expander("📊 下期選號參考指標", expanded=True):
             f"小號建議範圍：{int(_bs_stats['small_q25'])} ～ {int(_bs_stats['small_q75'])} 個"
         )
 
-    with ref_c4:
+    with ref_c3:
         st.markdown("#### 🔢 連號規則說明")
         st.caption("系統自動套用以下連號過濾規則")
         st.success("✅ **允許**：最多 1 組二連號（加分）")

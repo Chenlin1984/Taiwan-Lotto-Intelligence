@@ -162,18 +162,18 @@ def compute_missing_periods(history: List[List[int]]) -> Dict[int, int]:
     """
     計算每個號碼（1-49）距今已遺漏幾期。
     遺漏 0 表示最近一期有出現。
+
+    演算法：從最新一期往回掃，連續未出現的期數即為遺漏期數，
+    遇到第一次出現即停止計數。
     """
-    missing = {n: 0 for n in range(1, 50)}
-    for i, draw in enumerate(reversed(history)):
-        for n in range(1, 50):
-            if n not in draw:
-                if missing[n] == 0:
-                    # 還沒開始計，從第 1 期未出現算起
-                    missing[n] = i + 1
-    # 最後一期出現的號碼遺漏期數為 0
-    if history:
-        for n in history[-1]:
-            missing[n] = 0
+    missing = {}
+    for n in range(1, 50):
+        count = 0
+        for draw in reversed(history):
+            if n in draw:
+                break
+            count += 1
+        missing[n] = count
     return missing
 
 
@@ -215,7 +215,45 @@ def compute_sum_stats(history: List[List[int]], periods: int = 50) -> Dict[str, 
 
 
 # ──────────────────────────────────────────────
-# 9. 連續出現號碼（建議避開）
+# 9. 近期過熱號碼（建議避開）
+# ──────────────────────────────────────────────
+def compute_overfrequent_numbers(
+    history: List[List[int]],
+    window: int = 10,
+    z_threshold: float = 1.5,
+) -> List[int]:
+    """
+    回傳近 window 期出現頻率超過「均值 + z_threshold × 標準差」的號碼。
+    這些號碼近期過於頻繁出現，統計上下期出現機率偏低。
+
+    Parameters
+    ----------
+    history     : 歷史開獎資料
+    window      : 觀察視窗（期數），預設 10
+    z_threshold : 超頻閾值（Z 分數），預設 1.5
+
+    Returns
+    -------
+    排序後的過熱號碼列表
+    """
+    recent = history[-window:]
+    counter: Counter = Counter()
+    for draw in recent:
+        for n in draw:
+            counter[n] += 1
+
+    counts = np.array([counter.get(n, 0) for n in range(1, 50)], dtype=float)
+    mean = float(np.mean(counts))
+    std = float(np.std(counts))
+    if std == 0:
+        return []
+
+    threshold = mean + z_threshold * std
+    return sorted(n for n in range(1, 50) if counter.get(n, 0) >= threshold)
+
+
+# ──────────────────────────────────────────────
+# 10. 連續出現號碼（建議避開）
 # ──────────────────────────────────────────────
 def compute_streak_numbers(history: List[List[int]], streak: int = 3) -> List[int]:
     """
