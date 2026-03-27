@@ -22,7 +22,14 @@ if str(ROOT) not in sys.path:
 
 from src.engine import EnhancedLottoAnalyzer, LottoConfig, RandomForestPredictor
 from src.scraper import DATA_PATH, load_history
-from src.utils import backtest_combo_hits, compute_missing_periods, simulate_roi
+from src.utils import (
+    backtest_combo_hits,
+    compute_big_small_stats,
+    compute_missing_periods,
+    compute_streak_numbers,
+    compute_sum_stats,
+    simulate_roi,
+)
 
 # ── 中文字型設定（避免 matplotlib 亂碼）─────────────────────
 def _setup_chinese_font():
@@ -119,6 +126,48 @@ if len(excluded_nums) > 43:
     st.stop()
 
 st.info(f"已載入 **{len(history)}** 期歷史資料 | 最近一期: {history[-1] if history else 'N/A'}")
+
+# ──────────────────────────────────────────────
+# 下期選號參考指標
+# ──────────────────────────────────────────────
+_streak_nums = compute_streak_numbers(history, streak=3)
+_sum_stats = compute_sum_stats(history, periods=50)
+_bs_stats = compute_big_small_stats(history, periods=50)
+
+with st.expander("📊 下期選號參考指標", expanded=True):
+    ref_c1, ref_c2, ref_c3, ref_c4 = st.columns(4)
+
+    with ref_c1:
+        st.markdown("#### ⚠️ 建議避開號碼")
+        st.caption("近 3 期連續出現的號碼，統計上下期休息機率較高")
+        if _streak_nums:
+            st.warning(
+                "連續出現：" + "  ".join(f"**{n:02d}**" for n in _streak_nums)
+            )
+        else:
+            st.success("近 3 期無號碼連續出現，無需特別迴避")
+
+    with ref_c2:
+        st.markdown("#### 📐 和值參考範圍")
+        st.caption("近 50 期統計，建議選號落在此區間")
+        st.metric("Q25 ～ Q75", f"{int(_sum_stats['q25'])} ～ {int(_sum_stats['q75'])}")
+        st.caption(f"歷史均值：{_sum_stats['mean']:.1f}　標準差：{_sum_stats['std']:.1f}")
+
+    with ref_c3:
+        st.markdown("#### ⚖️ 大小號比例參考")
+        st.caption("近 50 期平均大小號分佈（小號 ≤25，大號 >25）")
+        col_s, col_b = st.columns(2)
+        col_s.metric("小號(≤25)", f"{_bs_stats['avg_small']} 個")
+        col_b.metric("大號(>25)", f"{_bs_stats['avg_big']} 個")
+        st.caption(
+            f"小號建議範圍：{int(_bs_stats['small_q25'])} ～ {int(_bs_stats['small_q75'])} 個"
+        )
+
+    with ref_c4:
+        st.markdown("#### 🔢 連號規則說明")
+        st.caption("系統自動套用以下連號過濾規則")
+        st.success("✅ **允許**：最多 1 組二連號（加分）")
+        st.error("❌ **自動排除**：3 個以上連號（如 12-13-14）")
 
 # ──────────────────────────────────────────────
 # Tab 佈局

@@ -212,3 +212,54 @@ def compute_sum_stats(history: List[List[int]], periods: int = 50) -> Dict[str, 
         "q25": float(np.percentile(arr, 25)),
         "q75": float(np.percentile(arr, 75)),
     }
+
+
+# ──────────────────────────────────────────────
+# 9. 連續出現號碼（建議避開）
+# ──────────────────────────────────────────────
+def compute_streak_numbers(history: List[List[int]], streak: int = 3) -> List[int]:
+    """
+    回傳最近 streak 期「每期都出現」的號碼。
+    這些號碼連續出現次數過多，統計上下期迴避較佳。
+
+    Parameters
+    ----------
+    history : 歷史開獎資料（每筆為 6 個號碼的 list）
+    streak  : 連續期數門檻，預設 3
+
+    Returns
+    -------
+    排序後的號碼列表
+    """
+    if len(history) < streak:
+        return []
+    recent_sets = [set(draw) for draw in history[-streak:]]
+    common = recent_sets[0]
+    for s in recent_sets[1:]:
+        common = common & s
+    return sorted(common)
+
+
+# ──────────────────────────────────────────────
+# 10. 大小號分佈統計
+# ──────────────────────────────────────────────
+def compute_big_small_stats(history: List[List[int]], periods: int = 50) -> Dict[str, float]:
+    """
+    計算近 periods 期大號(>25) / 小號(≤25) 平均分佈。
+
+    Returns
+    -------
+    dict  {"avg_small": float, "avg_big": float,
+           "small_q25": float, "small_q75": float}
+    """
+    if not history:
+        return {"avg_small": 3.0, "avg_big": 3.0, "small_q25": 2.0, "small_q75": 4.0}
+    small_counts = [sum(1 for n in draw if n <= 25) for draw in history[-periods:]]
+    arr = np.array(small_counts, dtype=float)
+    avg_small = float(np.mean(arr))
+    return {
+        "avg_small": round(avg_small, 1),
+        "avg_big": round(6 - avg_small, 1),
+        "small_q25": float(np.percentile(arr, 25)),
+        "small_q75": float(np.percentile(arr, 75)),
+    }
