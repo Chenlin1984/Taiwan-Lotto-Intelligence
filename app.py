@@ -165,50 +165,33 @@ with _excl_cols[0]:
     else:
         st.success("無（近期無號碼過於頻繁）")
 
+    st.markdown("**③ 長遺漏號碼（> 15 期未出現）**")
+    st.caption("長期未出現，統計規律偏離，建議暫時迴避")
+    if _long_missing:
+        # 顯示：號碼(遺漏期數)，遺漏最多排最前
+        st.warning("　".join(f"`{n:02d}`({m}期)" for n, m in _long_missing))
+    else:
+        st.success("無（所有號碼遺漏均在 15 期以內）")
+
 with _excl_cols[1]:
-    st.markdown("**📋 綜合建議排除清單**（①＋②聯集）")
-    if _suggested_remove:
+    st.markdown("**📋 綜合建議排除清單**（①＋②＋③聯集）")
+    _suggested_remove_all = sorted(
+        set(_suggested_remove) | {n for n, _ in _long_missing}
+    )
+    if _suggested_remove_all:
         badge_html = " ".join(
             f'<span style="background:#e74c3c;color:white;padding:3px 8px;'
-            f'border-radius:12px;font-weight:bold;margin:2px;display:inline-block">{n:02d}</span>'
-            for n in _suggested_remove
+            f'border-radius:12px;font-weight:bold;margin:2px;display:inline-block">'
+            f'{n:02d}</span>'
+            for n in _suggested_remove_all
         )
         st.markdown(badge_html, unsafe_allow_html=True)
         st.caption(
-            f"共 {len(_suggested_remove)} 個號碼建議迴避，"
+            f"共 {len(_suggested_remove_all)} 個號碼建議迴避，"
             "可複製至側邊欄「手動排除號碼」欄位使用。"
         )
     else:
         st.success("目前無建議排除號碼，所有號碼可正常使用。")
-
-# ── 長遺漏號碼參考 ────────────────────────────
-st.markdown("### 📉 長遺漏號碼參考（遺漏 > 15 期）")
-if _long_missing:
-    lm_left, lm_right = st.columns([3, 2])
-    with lm_left:
-        # 以藍色徽章顯示，按遺漏由多到少
-        badge_html2 = " ".join(
-            f'<span style="background:#2980b9;color:white;padding:3px 8px;'
-            f'border-radius:12px;font-weight:bold;margin:2px;display:inline-block">'
-            f'{n:02d}<sub style="font-size:10px">({m}期)</sub></span>'
-            for n, m in _long_missing
-        )
-        st.markdown(badge_html2, unsafe_allow_html=True)
-    with lm_right:
-        # 簡表
-        df_lm = pd.DataFrame(_long_missing, columns=["號碼", "遺漏期數"])
-        st.dataframe(
-            df_lm,
-            use_container_width=True,
-            hide_index=True,
-            height=min(len(_long_missing) * 38 + 38, 300),
-        )
-    st.caption(
-        "⚠️ 注意：長遺漏號碼統計上仍是獨立事件，每注機率相同。"
-        "此清單僅供參考，非保證中獎依據。"
-    )
-else:
-    st.success("目前無號碼遺漏超過 15 期。")
 
 # ── 選號參考指標 ─────────────────────────────
 with st.expander("📊 下期選號參考指標", expanded=False):
