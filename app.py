@@ -121,6 +121,13 @@ with st.sidebar:
     st.divider()
     st.caption(f"資料路徑：`{DATA_PATH}`")
 
+    st.divider()
+    if st.button("♻️ 強制同步 GitHub 最新邏輯"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.success("已清除緩存，請重新整理網頁")
+        st.rerun()
+
 # ──────────────────────────────────────────────
 # 主體
 # ──────────────────────────────────────────────
