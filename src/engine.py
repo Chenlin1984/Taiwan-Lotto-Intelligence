@@ -17,12 +17,41 @@ from .utils import (
     compute_frequency_weight,
     compute_missing_periods,
     compute_sum_stats,
+    count_mirror_pairs,
     encode_ml_one_hot,
 )
 
 
 # ──────────────────────────────────────────────
-# 設定 Dataclass
+# 9 大篩選指標設定
+# ──────────────────────────────────────────────
+@dataclass
+class FilterConfig:
+    """9 大可調篩選指標，對應使用者說明書各項參數。"""
+    # 總和 (Sum)
+    sum_min: int = 100
+    sum_max: int = 200
+    # 大小 (Size)：小號（≤25）個數區間
+    small_min: int = 1
+    small_max: int = 5
+    # 質數 (Prime)：質數個數區間
+    prime_min: int = 1
+    prime_max: int = 3
+    # 間距 (Gap)：最大號 - 最小號 ≥ 此值
+    gap_min: int = 25
+    # 連號 (Consec)：是否要求至少 1 組二連號
+    require_consecutive: bool = False
+    # 尾數 (Tail)：是否允許 6 個尾數全相同 / 全不同
+    allow_all_same_tail: bool = False
+    allow_all_diff_tail: bool = True
+    # 鏡像 (Mirror)：最多允許幾組鏡像對（如 12↔21）
+    mirror_max: int = 1
+    # 遺漏熱號排除 (Omit)：遺漏期數 < 此值的號碼不選（0 = 不啟用）
+    omit_hot_min: int = 0
+
+
+# ──────────────────────────────────────────────
+# 系統設定 Dataclass
 # ──────────────────────────────────────────────
 @dataclass
 class LottoConfig:
@@ -256,9 +285,11 @@ class EnhancedLottoAnalyzer:
         history: List[List[int]],
         config: Optional[LottoConfig] = None,
         excluded: Optional[List[int]] = None,
+        filter_cfg: Optional[FilterConfig] = None,
     ):
         self.history = history
         self.config = config or LottoConfig()
+        self.filter_cfg = filter_cfg or FilterConfig()
         self.excluded: Set[int] = set(excluded or [])
         self._section_analyzer = SectionVectorAnalyzer(history)
         self._partner_map = build_partner_map(
@@ -330,31 +361,66 @@ class EnhancedLottoAnalyzer:
     # ── 理性過濾 ───────────────────────────────
     def is_reasonable(self, combo: List[int]) -> bool:
         """
-        基本過濾：排除歷史重複、三連號以上、排除號碼、和值範圍。
+        9 大篩選指標硬性過濾，任一不通過即排除。
+        FilterConfig 控制各指標的臨界值。
         """
         combo_set = set(combo)
+        fc = self.filter_cfg
 
-        # 排除包含被排除號碼
+        # ① 排除包含被排除號碼
         if combo_set & self.excluded:
             return False
 
-        # 排除歷史已出現組合
+        # ② 排除歷史已出現組合
         if combo_set in self._history_sets:
             return False
 
-        # [Fix] 連號規則：三連號以上強制排除
-        _, trips = self._count_consecutive(combo)
+        # ③ 連號規則：三連號以上強制排除
+        pairs2, trips = self._count_consecutive(combo)
         if trips > 0:
             return False
 
-        # 和值範圍（±1.5 倍標準差）
-        s = sum(combo)
-        mean = self._sum_stats["mean"]
-        std = self._sum_stats["std"]
-        if not (mean - 1.5 * std <= s <= mean + 1.5 * std):
+        # ④ 若要求至少 1 組二連號
+        if fc.require_consecutive and pairs2 == 0:
             return False
 
-        # 至少覆蓋 3 個區段
+        # ⑤ 總和範圍
+        s = sum(combo)
+        if not (fc.sum_min <= s <= fc.sum_max):
+            return False
+
+        # ⑥ 間距（最大號 - 最小號）
+        if max(combo) - min(combo) < fc.gap_min:
+            return False
+
+        # ⑦ 大小號個數
+        small_count = sum(1 for n in combo if n <= 25)
+        if not (fc.small_min <= small_count <= fc.small_max):
+            return False
+
+        # ⑧ 質數個數
+        prime_count = sum(1 for n in combo if n in PRIMES)
+        if not (fc.prime_min <= prime_count <= fc.prime_max):
+            return False
+
+        # ⑨ 尾數（個位數）分佈
+        tails = [n % 10 for n in combo]
+        tail_unique = len(set(tails))
+        if not fc.allow_all_same_tail and tail_unique == 1:
+            return False
+        if not fc.allow_all_diff_tail and tail_unique == 6:
+            return False
+
+        # ⑩ 鏡像對數量（如 12↔21）
+        if count_mirror_pairs(combo) > fc.mirror_max:
+            return False
+
+        # ⑪ 熱號排除：遺漏期數 < omit_hot_min 的號碼不納入
+        if fc.omit_hot_min > 0:
+            if any(self._missing.get(n, 0) < fc.omit_hot_min for n in combo):
+                return False
+
+        # ⑫ 至少覆蓋 3 個區段（維持原有區段限制）
         if self._section_analyzer.section_hit_count(combo) < 3:
             return False
 
