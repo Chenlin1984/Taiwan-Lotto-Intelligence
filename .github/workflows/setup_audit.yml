@@ -1,0 +1,58 @@
+name: 每週設定審計 (setup-audit)
+
+on:
+  schedule:
+    # 每週一 09:00 台灣時間（UTC+8）= UTC 01:00
+    - cron: '0 1 * * 1'
+  workflow_dispatch:  # 支援手動觸發
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout 程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 執行設定審計
+        id: audit
+        run: python scripts/setup_audit.py > audit_report.txt 2>&1
+        continue-on-error: true
+
+      - name: 輸出審計報告至 Job Summary
+        run: |
+          echo "## 📋 每週設定審計報告 (setup-audit)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "執行時間：$(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat audit_report.txt >> $GITHUB_STEP_SUMMARY
+
+      - name: 建立 GitHub Issue（若有建議刪除或衝突）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPORT=$(cat audit_report.txt)
+          FLAGGED=$(echo "$REPORT" | grep -c "建議刪除\|⚠️\|衝突" || true)
+          if [ "$FLAGGED" -gt "0" ]; then
+            TITLE="[setup-audit] 每週設定審計發現待處理項目 $(date '+%Y-%m-%d')"
+            BODY="## 每週設定審計報告
+
+          ${REPORT}
+
+          ---
+          *由 GitHub Actions setup-audit 工作流程自動產生*"
+            gh issue create \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label "maintenance" || true
+          else
+            echo "✅ 審計通過，無需建立 Issue"
+          fi
